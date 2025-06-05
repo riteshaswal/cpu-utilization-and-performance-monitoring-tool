@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Live Process Monitor</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      margin: 0;
+      padding: 0;
+      background: linear-gradient(to bottom, rgba(0,0,0,0.6), rgba(0,0,0,0.9)),
+                  url('https://wallpaperaccess.com/full/2680021.jpg') no-repeat center center fixed;
+      background-size: cover;
+      color: #f1f1f1;
+    }
+
+    h2, h3, h4 {
+      text-align: center;
+      font-weight: bold;
+      color: #00f0ff;
+    }
+
+    #pidInput {
+      padding: 10px;
+      width: 300px;
+      border: none;
+      border-radius: 5px;
+      margin-right: 10px;
+    }
+
+    button {
+      padding: 10px 20px;
+      background-color: #00c3ff;
+      border: none;
+      color: white;
+      border-radius: 5px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    .chart-container {
+      display: flex;
+      justify-content: center;
+      gap: 40px;
+      flex-wrap: wrap;
+      padding: 20px;
+    }
+
+    canvas {
+      background-color: #fff;
+      border-radius: 8px;
+      padding: 10px;
+      box-shadow: 0 0 15px rgba(0,0,0,0.4);
+    }
+
+    #statsBox, #switchBox {
+      background: rgba(0, 0, 0, 0.7);
+      border: 1px solid #444;
+      padding: 20px;
+      width: 500px;
+      max-height: 400px;
+      overflow-y: auto;
+      border-radius: 10px;
+      box-shadow: 0 0 15px rgba(0,0,0,0.5);
+    }
+
+    #liveStats, #switchStats {
+      font-size: 14px;
+      color: #fff;
+    }
+
+    details summary {
+      cursor: pointer;
+      font-weight: bold;
+      color: #0ff;
+    }
+
+    pre {
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      background: rgba(255,255,255,0.05);
+      padding: 10px;
+      border-radius: 6px;
+      color: #ffeb3b;
+    }
+
+    hr {
+      border: 0;
+      border-top: 1px solid #555;
+      margin: 10px 0;
+    }
+
+    .center {
+      text-align: center;
+      padding-top: 20px;
+    }
+
+    /* NEW: Dummy Process Box */
+    #dummyBox {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      background: rgba(0, 0, 0, 0.75);
+      padding: 15px;
+      border-radius: 10px;
+      box-shadow: 0 0 15px rgba(0,0,0,0.5);
+      border: 1px solid #444;
+      width: 250px;
+    }
+
+    #dummyBox input {
+      width: 80%;
+      padding: 8px;
+      margin-bottom: 10px;
+      border-radius: 5px;
+      border: none;
+    }
+
+    #dummyBox button {
+      width: 100%;
+    }
+
+    #dummyOutput {
+      margin-top: 10px;
+      color: #0ff;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Dummy Process Generator Box -->
+  <!-- Dummy Process Generator Box -->
+<div id="dummyBox" class="center" style="margin-top: 20px;">
+  <h4 style="color:#00f0ff;">Generate Dummy Process</h4>
+  <input type="number" id="dummyCount" placeholder="No. of dummy processes">
+  <button onclick="generateDummy()">Generate</button>
+  <div id="dummyOutput">No dummy process generated yet.</div>
+</div>
+
+<!-- Manual PID Input -->
+<div class="center" style="margin-top: 30px;">
+  <h2>Enter PIDs (comma-separated)</h2>
+  <input id="pidInput" placeholder="e.g. 1234,5678">
+  <button onclick="start()">Start Monitoring</button>
+  <button onclick="resetMonitoring()">Reset Monitoring</button>
+</div>
+
+<!-- Terminate PID -->
+<div class="center" style="margin-top: 20px;">
+  <h2>Terminate a PID</h2>
+  <input type="text" id="terminatePidInput" placeholder="Enter PIDs (e.g., 1234, 5678)">
+  <button onclick="terminatePID()">Terminate</button>
+</div>
+
+<!-- Result Button -->
+<div class="center" style="margin-top: 40px;">
+  <button id="result-btn" class="btn btn-primary" style="padding: 10px 20px;">Show Result</button>
+</div>
+
+<!-- Result Output Section -->
+<div id="result-section" class="center" style="margin-top: 30px;">
+  <!-- Best Algorithm -->
+  <h3 id="best-algo" style="color: green; font-size: 24px; margin-bottom: 20px;"></h3>
+
+  <!-- FCFS Graph -->
+  <h4>FCFS Schedule</h4>
+  <img id="fcfs-graph" style="width: 90%; max-width: 800px; border: 1px solid #ddd; border-radius: 10px; margin-bottom: 30px;" />
+
+  <!-- SJF Graph -->
+  <h4>SJF Schedule</h4>
+  <img id="sjf-graph" style="width: 90%; max-width: 800px; border: 1px solid #ddd; border-radius: 10px; margin-bottom: 30px;" />
+
+  <!-- RR Graph -->
+  <h4>Round Robin Schedule</h4>
+  <img id="rr-graph" style="width: 90%; max-width: 800px; border: 1px solid #ddd; border-radius: 10px;" />
+</div>
+<!-- Result Table -->
+<div class="center" style="margin-top: 30px; overflow-x: auto;">
+  <table id="result-table" border="1" cellpadding="10" style="width: 100%; border-collapse: collapse;">
+    <thead style="background-color: #f0f0f0; color:black;">
+      <tr>
+        <th>PID</th>
+        <th>Arrival</th>
+        <th>Start</th>
+        <th>Completion</th>
+        <th>Burst</th>
+        <th>TAT</th>
+        <th>WT</th>
+        <th>RT</th>
+        <th>CPU %</th>
+        <th>MEM %</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+</div>
+
+<!-- Live Resource Usage Section -->
+<div class="chart-container" style="margin-top: 40px;">
+  <div>
+    <h3>Live CPU & Memory</h3>
+    <canvas id="liveChart" width="500" height="250"></canvas>
+  </div>
+  <div id="statsBox">
+    <h4>Current Resource Usage</h4>
+    <div id="liveStats">Waiting for data...</div>
+  </div>
+</div>
+
+<!-- Context Switch Timeline -->
+<div class="chart-container" style="margin-top: 40px;">
+  <div>
+    <h3>Process Timeline (Context Switches)</h3>
+    <canvas id="timelineChart" width="600" height="300"></canvas>
+  </div>
+  <div id="switchBox">
+    <h4>Context Switch Log</h4>
+    <div id="switchStats">Waiting for data...</div>
+  </div>
+</div>
+
+  <script>
+    let liveChart, timelineChart;
+    let liveLabels = [];
+    const liveDataMap = {};
+    const pidColorMap = {};
+    const defaultColors = ['#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231', '#911eb4', '#46f0f0', '#f032e6', '#bcf60c', '#fabebe'];
+
+    function getColor(pid) {
+      if (!pidColorMap[pid]) {
+        const keys = Object.keys(pidColorMap);
+        pidColorMap[pid] = defaultColors[keys.length % defaultColors.length];
+      }
+      return pidColorMap[pid];
+    }
+    document.getElementById("result-btn").addEventListener("click", async () => {
+  try {
+    const response = await fetch("/result");
+    const data = await response.json();
+
+    // 1. Show best algorithm
+    document.getElementById("best-algo").textContent = `Best Algorithm: ${data.best_algo}`;
+
+    // 2. Show Graphs
+    document.getElementById("fcfs-graph").src = `data:image/png;base64,${data.fcfs_img}`;
+    document.getElementById("sjf-graph").src = `data:image/png;base64,${data.sjf_img}`;
+    document.getElementById("rr-graph").src = `data:image/png;base64,${data.rr_img}`;
+
+    // 3. Populate Table
+    const tbody = document.querySelector("#result-table tbody");
+    tbody.innerHTML = ""; // Clear previous rows if any
+
+    data.metrics.forEach(proc => {
+      const row = document.createElement("tr");
+
+      row.innerHTML = `
+        <td>${proc.pid}</td>
+        <td>${proc.arrival_time.toFixed(2)}</td>
+        <td>${proc.start_time.toFixed(2)}</td>
+        <td>${proc.completion_time?.toFixed(2) || "-"}</td>
+        <td>${proc.burst_time.toFixed(2)}</td>
+        <td>${proc.turnaround_time.toFixed(2)}</td>
+        <td>${proc.waiting_time.toFixed(2)}</td>
+        <td>${proc.response_time.toFixed(2)}</td>
+        <td>${proc.avg_cpu_percent.toFixed(2)}%</td>
+        <td>${proc.avg_memory_percent.toFixed(2)}%</td>
+      `;
+
+      tbody.appendChild(row);
+    });
+
+    // Show the result section (if hidden by default)
+    document.getElementById("result-section").style.display = "block";
+  } catch (err) {
+    console.error("Failed to load result:", err);
+    alert("Error fetching results. Please try again.");
+  }
+});
+    function start() {
+      const pids = document.getElementById("pidInput").value.split(',').map(p => parseInt(p.trim()));
+      fetch('/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pids })
+      }).then(() => {
+        setInterval(fetchLive, 2000);
+        setInterval(fetchTimeline, 3000);
+      });
+    }
+
+    function fetchLive() {
+      fetch('/live')
+        .then(res => res.json())
+        .then(data => {
+          const pids = Object.keys(data);
+          // Remove data for terminated/missing PIDs
+const currentPIDs = new Set(pids);
+for (const pid in liveDataMap) {
+  if (!currentPIDs.has(pid)) {
+    delete liveDataMap[pid];
+  }
+}
+          const timeLabel = new Date().toLocaleTimeString();
+          liveLabels.push(timeLabel);
+          if (liveLabels.length > 20) liveLabels.shift();
+
+          let html = '';
+
+          pids.forEach(pid => {
+            const info = data[pid];
+            const color = getColor(pid);
+
+            if (!liveDataMap[pid]) {
+              liveDataMap[pid] = { cpu: [], mem: [], color };
+            }
+
+            if (info.error) {
+              html += `<strong>PID ${pid}</strong>: ${info.error}<br><hr>`;
+              return;
+            }
+
+            liveDataMap[pid].cpu.push(info.cpu);
+            liveDataMap[pid].mem.push(info.mem.toFixed(2));
+            if (liveDataMap[pid].cpu.length > 20) {
+              liveDataMap[pid].cpu.shift();
+              liveDataMap[pid].mem.shift();
+            }
+
+            html += `
+              <strong style="color: #ffd700;">PID ${pid}</strong><br>
+              Name: <b>${info.name}</b><br>
+              Status: <b>${info.status}</b><br>
+              Priority: <b>${info.priority}</b><br>
+              Threads: <b>${info.threads}</b><br>
+              CPU: <b style="color:#ff5252">${info.cpu}%</b><br>
+              Memory: <b style="color:#2196F3">${info.mem.toFixed(2)}%</b><br>
+              CPU Times: User ${info.cpu_times.user.toFixed(2)}s, System ${info.cpu_times.system.toFixed(2)}s<br>
+              Net I/O: Sent ${Math.round(info.net_io.bytes_sent / 1024)} KB, Recv ${Math.round(info.net_io.bytes_recv / 1024)} KB<br>
+              Env: <details><summary>Show</summary><pre>${JSON.stringify(info.env, null, 2)}</pre></details>
+              <hr>
+            `;
+          });
+
+          document.getElementById('liveStats').innerHTML = html;
+
+          const ctx = document.getElementById('liveChart').getContext('2d');
+          const datasets = [];
+
+          Object.keys(liveDataMap).forEach(pid => {
+            datasets.push({
+              label: `CPU - PID ${pid}`,
+              data: liveDataMap[pid].cpu,
+              borderColor: liveDataMap[pid].color,
+              fill: false,
+              tension: 0.4
+            });
+            datasets.push({
+              label: `MEM - PID ${pid}`,
+              data: liveDataMap[pid].mem,
+              borderColor: liveDataMap[pid].color,
+              borderDash: [5, 5],
+              fill: false,
+              tension: 0.4
+            });
+          });
+
+          if (!liveChart) {
+            liveChart = new Chart(ctx, {
+              type: 'line',
+              data: {
+                labels: liveLabels,
+                datasets
+              },
+              options: {
+                responsive: true,
+                animation: false,
+                plugins: {
+                  tooltip: { mode: 'nearest', intersect: false },
+                  legend: { position: 'top' }
+                },
+                scales: {
+                  x: { title: { display: true, text: 'Time' } },
+                  y: { beginAtZero: true, title: { display: true, text: 'Usage (%)' } }
+                }
+              }
+            });
+          } else {
+            liveChart.data.labels = liveLabels;
+            liveChart.data.datasets = datasets;
+            liveChart.update();
+          }
+        });
+    }
+
+    function fetchTimeline() {
+      fetch('/timeline')
+        .then(res => res.json())
+        .then(data => {
+          const pidGroups = {};
+          let switchText = '';
+
+          data.forEach(entry => {
+            const pid = `${entry.pid}`;
+            if (!pidGroups[pid]) pidGroups[pid] = [];
+            pidGroups[pid].push({
+              x: entry.timestamp,
+              base: entry.timestamp,
+              y: `PID ${pid}`,
+              width: entry.duration
+            });
+
+            switchText += `<span style="color:#00e676;">PID ${pid}</span> ran from <b>${entry.timestamp}s</b> for <b>${entry.duration}s</b><br>`;
+          });
+
+          document.getElementById('switchStats').innerHTML = switchText;
+
+          const datasets = Object.keys(pidGroups).map(pid => ({
+            label: `PID ${pid}`,
+            data: pidGroups[pid].map(d => ({
+              x: d.base,
+              y: `PID ${pid}`,
+              x2: d.base + d.width
+            })),
+            backgroundColor: getColor(pid),
+            borderSkipped: false,
+            borderRadius: 4,
+            barThickness: 15
+          }));
+
+          const ctx = document.getElementById('timelineChart').getContext('2d');
+          if (timelineChart) timelineChart.destroy();
+
+          timelineChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+              datasets
+            },
+            options: {
+              indexAxis: 'y',
+              responsive: true,
+              animation: false,
+              scales: {
+                x: {
+                  title: { display: true, text: 'Time (s)' },
+                  stacked: true
+                },
+                y: {
+                  title: { display: true, text: 'PID' },
+                  stacked: true
+                }
+              },
+              plugins: {
+                tooltip: {
+                  callbacks: {
+                    label: context => {
+                      const d = context.raw;
+                      return `${context.dataset.label}: from ${d.x}s to ${d.x2}s`;
+                    }
+                  }
+                }
+              }
+            }
+          });
+        });
+    }
+
+    // 🔧 Dummy Process Generation Handler
+    function generateDummy() {
+  const count = parseInt(document.getElementById('dummyCount').value);
+  if (!count || count <= 0) {
+    document.getElementById('dummyOutput').innerText = 'Please enter a valid number.';
+    return;
+  }
+  
+
+  fetch('/generate-dummy', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ count })
+  })
+  .then(res => res.json())
+  .then(data => {
+    const pids = data.pids || [];
+    const message = data.message || 'Dummy processes generated.';
+    const pidList = pids.length > 0 ? `<br><strong>PIDs:</strong> ${pids.join(', ')}` : '';
+    document.getElementById('dummyOutput').innerHTML = `${message}${pidList}`;
+  });
+}
+function resetMonitoring() {
+    fetch('/reset', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    }).then(response => response.json())
+      .then(data => {
+          alert(data.message);
+          // Optional: clear charts or reload the page
+          location.reload();
+      });
+}
+function terminatePID() {
+  const input = document.getElementById("terminatePidInput").value;
+  const pidArray = input.split(',').map(p => parseInt(p.trim())).filter(p => !isNaN(p));
+
+  if (pidArray.length === 0) {
+    alert("Please enter at least one valid PID to terminate.");
+    return;
+  }
+
+  fetch('/terminate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pids: pidArray })  // 💥 change from pid: pid to pids: [array]
+  })
+  .then(response => response.json())
+  .then(data => {
+    alert(data.message || "Termination response received.");
+  })
+  .catch(error => {
+    console.error("Error terminating PIDs:", error);
+    alert("Failed to terminate PIDs.");
+  });
+}
+  </script>
+</body>
+</html>
